@@ -3,9 +3,10 @@ local Constants = {}
 Constants.ADDON_ID = "nuzi_vehicles"
 Constants.ADDON_NAME = "Nuzi Vehicles"
 Constants.ADDON_AUTHOR = "Nuzi"
-Constants.ADDON_VERSION = "1.0.0"
+Constants.ADDON_VERSION = "1.0.5"
 Constants.ADDON_DESC = "Vehicle compass and speed profiler"
-Constants.SETTINGS_FILE_PATH = "nuzi-vehicles/settings.txt"
+Constants.SETTINGS_FILE_PATH = "nuzi-vehicles/.data/settings.txt"
+Constants.LEGACY_SETTINGS_FILE_PATH = "nuzi-vehicles/settings.txt"
 
 Constants.WINDOW_ID = "NuziVehiclesCompassMain"
 Constants.SPEED_WINDOW_ID = "NuziVehiclesCompassSpeed"

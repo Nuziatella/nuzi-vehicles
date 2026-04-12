@@ -40,24 +40,6 @@ local function renderNow()
     Ui.Render(Controller.BuildViewModel())
 end
 
-local function saveCurrentWindowPositions()
-    if not modulesReady() or Ui.GetPositions == nil then
-        return
-    end
-    local positions = Ui.GetPositions()
-    local settings = Shared.EnsureSettings()
-
-    settings.x = tonumber(positions.main_x) or settings.x
-    settings.y = tonumber(positions.main_y) or settings.y
-    settings.speed_x = tonumber(positions.speed_x) or settings.speed_x
-    settings.speed_y = tonumber(positions.speed_y) or settings.speed_y
-    settings.compass_x = tonumber(positions.compass_x) or settings.compass_x
-    settings.compass_y = tonumber(positions.compass_y) or settings.compass_y
-    settings.button_x = tonumber(positions.button_x) or settings.button_x
-    settings.button_y = tonumber(positions.button_y) or settings.button_y
-    Shared.SaveSettings()
-end
-
 local function savePosition(kind, x, y)
     local settings = Shared.EnsureSettings()
     if kind == "speed" then
@@ -133,7 +115,6 @@ local function onUiReloaded()
     if not modulesReady() then
         return
     end
-    saveCurrentWindowPositions()
     Ui.Destroy()
     Ui.Init(buildActions())
     Ui.ApplyPositions(Shared.EnsureSettings())
@@ -160,7 +141,6 @@ local function onUnload()
     api.On("UPDATE", noop)
     api.On("UI_RELOADED", noop)
     if Ui ~= nil then
-        saveCurrentWindowPositions()
         Ui.Destroy()
     end
 end

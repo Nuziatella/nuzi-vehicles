@@ -36,32 +36,61 @@ local function getFullPath(path)
     return string.gsub(full, "/+", "/")
 end
 
+local function getFullPathCandidates(path)
+    local rawPath = tostring(path or "")
+    local candidates = {}
+    local seen = {}
+
+    local function add(candidate)
+        if type(candidate) ~= "string" or candidate == "" then
+            return
+        end
+        candidate = string.gsub(candidate, "/+", "/")
+        if seen[candidate] then
+            return
+        end
+        seen[candidate] = true
+        table.insert(candidates, candidate)
+    end
+
+    add(getFullPath(rawPath))
+
+    local addonDir = string.match(rawPath, "^([^/]+)/")
+    if addonDir ~= nil and ADDONS_BASE_PATH ~= nil then
+        local lowerBase = string.lower(tostring(ADDONS_BASE_PATH))
+        local lowerAddonDir = "/" .. string.lower(addonDir)
+        if string.sub(lowerBase, -string.len(lowerAddonDir)) == lowerAddonDir then
+            local stripped = string.gsub(rawPath, "^" .. addonDir .. "/?", "")
+            add(tostring(ADDONS_BASE_PATH) .. "/" .. stripped)
+        end
+    end
+
+    return candidates
+end
+
 local function readTextFile(path)
     if type(io) ~= "table" or type(io.open) ~= "function" then
         return nil
     end
-    local fullPath = getFullPath(path)
-    if fullPath == nil then
-        return nil
+    for _, fullPath in ipairs(getFullPathCandidates(path)) do
+        local file = nil
+        local ok = pcall(function()
+            file = io.open(fullPath, "rb")
+        end)
+        if ok and file ~= nil then
+            local contents = nil
+            pcall(function()
+                contents = file:read("*a")
+            end)
+            pcall(function()
+                file:close()
+            end)
+            if type(contents) == "string" and contents ~= "" then
+                return contents
+            end
+        end
     end
-    local file = nil
-    local ok = pcall(function()
-        file = io.open(fullPath, "rb")
-    end)
-    if not ok or file == nil then
-        return nil
-    end
-    local contents = nil
-    pcall(function()
-        contents = file:read("*a")
-    end)
-    pcall(function()
-        file:close()
-    end)
-    if type(contents) ~= "string" or contents == "" then
-        return nil
-    end
-    return contents
+    return nil
 end
 
 local function parseScalar(rawValue)
@@ -123,10 +152,6 @@ local function writeFlatSettingsFile(path, value)
     if type(value) ~= "table" or type(io) ~= "table" or type(io.open) ~= "function" then
         return false
     end
-    local fullPath = getFullPath(path)
-    if fullPath == nil then
-        return false
-    end
     local keys = {}
     for key, item in pairs(value) do
         if encodeScalar(item) ~= nil then
@@ -139,52 +164,63 @@ local function writeFlatSettingsFile(path, value)
         lines[#lines + 1] = "    " .. tostring(key) .. " = " .. encodeScalar(value[key]) .. ","
     end
     lines[#lines + 1] = "}"
+    local payload = table.concat(lines, "\n")
 
-    local file = nil
-    local ok = pcall(function()
-        file = io.open(fullPath, "wb")
+    for _, fullPath in ipairs(getFullPathCandidates(path)) do
+        local file = nil
+        local ok = pcall(function()
+            file = io.open(fullPath, "wb")
+        end)
+        if ok and file ~= nil then
+            local writeOk = pcall(function()
+                file:write(payload)
+            end)
+            pcall(function()
+                file:close()
+            end)
+            if writeOk then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function readSerializedSettings(path)
+    if api.File == nil or api.File.Read == nil then
+        return nil
+    end
+    local ok, res = pcall(function()
+        return api.File:Read(path)
     end)
-    if not ok or file == nil then
+    if ok and type(res) == "table" then
+        return res
+    end
+    return nil
+end
+
+local function writeSerializedSettings(path, value)
+    if api.File == nil or api.File.Write == nil then
         return false
     end
-    local writeOk = pcall(function()
-        file:write(table.concat(lines, "\n"))
+    local ok = pcall(function()
+        api.File:Write(path, value)
     end)
-    pcall(function()
-        file:close()
-    end)
-    return writeOk
+    return ok and true or false
 end
 
 local function writeTableFile(path, value)
     if type(value) ~= "table" then
         return false
     end
-    if api.File ~= nil and api.File.Write ~= nil then
-        local ok = pcall(function()
-            api.File:Write(path, value)
-        end)
-        if ok then
-            return true
-        end
+    if writeFlatSettingsFile(path, value) then
+        writeSerializedSettings(path, value)
+        return true
     end
-    return writeFlatSettingsFile(path, value)
-end
-
-local function deepCopy(value, visited)
-    if type(value) ~= "table" then
-        return value
+    if writeSerializedSettings(path, value) then
+        return true
     end
-    visited = visited or {}
-    if visited[value] ~= nil then
-        return visited[value]
-    end
-    local out = {}
-    visited[value] = out
-    for key, item in pairs(value) do
-        out[deepCopy(key, visited)] = deepCopy(item, visited)
-    end
-    return out
+    return false
 end
 
 local function copyDefaults(into, defaults)
@@ -224,6 +260,23 @@ end
 
 function Shared.LoadSettings()
     local settings = nil
+    local migrated = false
+    local fileSettings = readSerializedSettings(Constants.SETTINGS_FILE_PATH)
+    if type(fileSettings) ~= "table" then
+        fileSettings = readFlatSettingsFile(Constants.SETTINGS_FILE_PATH)
+    end
+    if type(fileSettings) ~= "table" then
+        fileSettings = readSerializedSettings(Constants.LEGACY_SETTINGS_FILE_PATH)
+        if type(fileSettings) == "table" then
+            migrated = true
+        end
+    end
+    if type(fileSettings) ~= "table" then
+        fileSettings = readFlatSettingsFile(Constants.LEGACY_SETTINGS_FILE_PATH)
+        if type(fileSettings) == "table" then
+            migrated = true
+        end
+    end
     if api.GetSettings ~= nil then
         settings = api.GetSettings(Constants.ADDON_ID)
     end
@@ -231,7 +284,6 @@ function Shared.LoadSettings()
         settings = {}
     end
 
-    local fileSettings = readFlatSettingsFile(Constants.SETTINGS_FILE_PATH)
     if type(fileSettings) == "table" then
         for key, value in pairs(fileSettings) do
             settings[key] = value
@@ -239,7 +291,7 @@ function Shared.LoadSettings()
     end
 
     Shared.settings = settings
-    if copyDefaults(settings, Constants.DEFAULT_SETTINGS) or type(fileSettings) ~= "table" then
+    if copyDefaults(settings, Constants.DEFAULT_SETTINGS) or type(fileSettings) ~= "table" or migrated then
         Shared.SaveSettings()
     end
     return settings
