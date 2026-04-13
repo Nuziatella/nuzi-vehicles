@@ -213,6 +213,24 @@ local function attachDrag(window, dragTarget, key)
     if window == nil or dragTarget == nil or dragTarget.SetHandler == nil then
         return
     end
+    local function readWindowOffset()
+        local ok = false
+        local x, y = nil, nil
+        if window.GetEffectiveOffset ~= nil then
+            ok, x, y = pcall(function()
+                return window:GetEffectiveOffset()
+            end)
+        end
+        if (not ok or x == nil or y == nil) and window.GetOffset ~= nil then
+            ok, x, y = pcall(function()
+                return window:GetOffset()
+            end)
+        end
+        if ok then
+            return tonumber(x), tonumber(y)
+        end
+        return nil, nil
+    end
     local function onDragStart()
         if api.Input ~= nil and api.Input.IsShiftKeyDown ~= nil and not api.Input:IsShiftKeyDown() then
             return
@@ -234,8 +252,11 @@ local function attachDrag(window, dragTarget, key)
         if api.Cursor ~= nil and api.Cursor.ClearCursor ~= nil then
             api.Cursor:ClearCursor()
         end
-        if window.GetOffset ~= nil and Ui.actions ~= nil and Ui.actions.save_position ~= nil then
-            local x, y = window:GetOffset()
+        if Ui.actions ~= nil and Ui.actions.save_position ~= nil then
+            local x, y = readWindowOffset()
+            if x == nil or y == nil then
+                return
+            end
             if window.RemoveAllAnchors ~= nil and window.AddAnchor ~= nil then
                 safeCall(function()
                     window:RemoveAllAnchors()
@@ -510,10 +531,18 @@ end
 function Ui.GetPositions()
     local positions = {}
     local function readOffset(window)
-        if window ~= nil and window.GetOffset ~= nil then
-            local x, y = safeCall(function()
-                return window:GetOffset()
-            end)
+        if window ~= nil then
+            local x, y = nil, nil
+            if window.GetEffectiveOffset ~= nil then
+                x, y = safeCall(function()
+                    return window:GetEffectiveOffset()
+                end)
+            end
+            if (x == nil or y == nil) and window.GetOffset ~= nil then
+                x, y = safeCall(function()
+                    return window:GetOffset()
+                end)
+            end
             return tonumber(x), tonumber(y)
         end
         return nil, nil
