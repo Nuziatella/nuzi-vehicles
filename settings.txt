@@ -1,0 +1,15 @@
+{
+    enabled = true,
+    button_y = 17,
+    button_x = 493,
+    speed_x = 1879,
+    compass_y = -1,
+    y = 71,
+    x = 567,
+    show_main_window = false,
+    selected_profile_id = "clipper",
+    speed_y = 0,
+    show_compass_window = false,
+    compass_x = 1167,
+    show_speed_window = true,
+}
