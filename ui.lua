@@ -135,7 +135,7 @@ local function applyCommonWindowBehavior(window)
         window:EnableHidingIsRemove(false)
     end)
     safeCall(function()
-        window:SetUILayer("normal")
+        window:SetUILayer("game")
     end)
 end
 

@@ -317,16 +317,15 @@ end
 function Shared.SaveSettings()
     local settings = Shared.EnsureSettings()
     local saved = writeTableFile(Constants.SETTINGS_FILE_PATH, settings)
-    local fallbackSaved = writeTableFile(Constants.LEGACY_SETTINGS_FILE_PATH, settings)
     if api.SaveSettings ~= nil then
         api.SaveSettings()
     end
-    if not saved and not fallbackSaved and api.Log ~= nil and api.Log.Err ~= nil then
+    if not saved and api.Log ~= nil and api.Log.Err ~= nil then
         pcall(function()
             api.Log:Err("Nuzi Vehicles failed to write settings file: " .. tostring(Constants.SETTINGS_FILE_PATH))
         end)
     end
-    return saved or fallbackSaved
+    return saved
 end
 
 return Shared
