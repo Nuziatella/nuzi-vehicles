@@ -12,9 +12,8 @@ Boat nerd math, but packaged in a way that does not require a clipboard and a he
 
 ## Install
 
-1. Drop the `nuzi-vehicles` folder into your AAClassic `Addon` directory.
-2. Make sure the addon is enabled in game.
-3. Click the `Nuzi Vehicle` button to open the main controls.
+1. Install via Addon Manager
+2. Make sure its enabled in game.
 
 Saved data lives in `nuzi-vehicles/.data` so your positions and selected profile survive updates.
 
