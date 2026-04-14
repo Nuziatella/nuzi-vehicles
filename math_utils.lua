@@ -28,6 +28,12 @@ function MathUtils.AngleDelta(a, b)
     return delta
 end
 
+function MathUtils.SignedAngleDelta(fromHeading, toHeading)
+    local fromValue = MathUtils.NormalizeHeading(fromHeading)
+    local toValue = MathUtils.NormalizeHeading(toHeading)
+    return ((toValue - fromValue + 540) % 360) - 180
+end
+
 function MathUtils.HeadingLabel(degrees)
     local normalized = MathUtils.NormalizeHeading(degrees)
     local index = math.floor(((normalized + 22.5) % 360) / 45) + 1

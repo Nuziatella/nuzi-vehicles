@@ -223,6 +223,16 @@ local function writeTableFile(path, value)
     return false
 end
 
+local function hasTableFile(path)
+    if type(readSerializedSettings(path)) == "table" then
+        return true
+    end
+    if type(readFlatSettingsFile(path)) == "table" then
+        return true
+    end
+    return false
+end
+
 local function copyDefaults(into, defaults)
     local changed = false
     for key, value in pairs(defaults) do
@@ -291,7 +301,7 @@ function Shared.LoadSettings()
     end
 
     Shared.settings = settings
-    if copyDefaults(settings, Constants.DEFAULT_SETTINGS) or type(fileSettings) ~= "table" or migrated then
+    if copyDefaults(settings, Constants.DEFAULT_SETTINGS) or type(fileSettings) ~= "table" or migrated or not hasTableFile(Constants.SETTINGS_FILE_PATH) then
         Shared.SaveSettings()
     end
     return settings
@@ -307,14 +317,16 @@ end
 function Shared.SaveSettings()
     local settings = Shared.EnsureSettings()
     local saved = writeTableFile(Constants.SETTINGS_FILE_PATH, settings)
+    local fallbackSaved = writeTableFile(Constants.LEGACY_SETTINGS_FILE_PATH, settings)
     if api.SaveSettings ~= nil then
         api.SaveSettings()
     end
-    if not saved and api.Log ~= nil and api.Log.Err ~= nil then
+    if not saved and not fallbackSaved and api.Log ~= nil and api.Log.Err ~= nil then
         pcall(function()
             api.Log:Err("Nuzi Vehicles failed to write settings file: " .. tostring(Constants.SETTINGS_FILE_PATH))
         end)
     end
+    return saved or fallbackSaved
 end
 
 return Shared

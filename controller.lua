@@ -15,12 +15,15 @@ local Controller = {
         current_speed = 0,
         current_turn_speed = 0,
         speed_source = "Idle",
+        heading_source = "Idle",
         preferred_axis = nil,
         current_axis = nil,
         axis_deviation = nil,
         axis_efficiency_pct = 0,
         axis_penalty_pct = 0,
         axis_state_label = "Unknown",
+        axis_turn_hint = "Axis hold: --",
+        axis_boost_active = false,
         speed_bar_max = Constants.DEFAULT_SPEED_BAR_MAX,
         last_world_position = nil,
         last_world_sample_ms = nil,
@@ -317,6 +320,7 @@ local function updateHeading()
     if directHeading ~= nil then
         Controller.state.world_heading = MathUtils.NormalizeHeading(directHeading)
         Controller.state.world_heading_label = MathUtils.HeadingLabel(Controller.state.world_heading)
+        Controller.state.heading_source = "Direct"
         return
     end
 
@@ -328,6 +332,7 @@ local function updateHeading()
     if hasVehicleHeading and Controller.state.estimated_vehicle_heading ~= nil then
         Controller.state.world_heading = Controller.state.estimated_vehicle_heading
         Controller.state.world_heading_label = Controller.state.estimated_vehicle_heading_label
+        Controller.state.heading_source = "Estimate"
 
         local travelHeadingAge = nil
         if nowMs ~= nil and Controller.state.last_travel_heading_ms ~= nil then
@@ -345,6 +350,11 @@ local function updateHeading()
 
     Controller.state.world_heading = Controller.state.travel_heading
     Controller.state.world_heading_label = Controller.state.travel_heading_label
+    if Controller.state.travel_heading ~= nil then
+        Controller.state.heading_source = "Travel"
+    else
+        Controller.state.heading_source = "Idle"
+    end
 end
 
 local function updateSpeed()
@@ -380,6 +390,8 @@ local function updateAxisEvaluation(profile)
     Controller.state.axis_efficiency_pct = 0
     Controller.state.axis_penalty_pct = 0
     Controller.state.axis_state_label = "Unknown"
+    Controller.state.axis_turn_hint = "Turn: --"
+    Controller.state.axis_boost_active = false
 
     if axisModel == nil or Controller.state.travel_heading == nil then
         return
@@ -396,6 +408,32 @@ local function updateAxisEvaluation(profile)
     Controller.state.axis_efficiency_pct = evaluation.efficiency_pct
     Controller.state.axis_penalty_pct = evaluation.penalty_pct
     Controller.state.axis_state_label = evaluation.label
+    Controller.state.axis_boost_active = (tonumber(evaluation.deviation_deg) or 999) <= Constants.AXIS_BOOST_MAX_DEVIATION
+
+    local heading = tonumber(Controller.state.world_heading) or tonumber(Controller.state.travel_heading)
+    if heading == nil then
+        return
+    end
+    local bestTarget = nil
+    local bestSignedDelta = nil
+    for _, targetHeading in ipairs(axisModel.target_headings or {}) do
+        local signedDelta = MathUtils.SignedAngleDelta(heading, targetHeading)
+        if bestSignedDelta == nil or math.abs(signedDelta) < math.abs(bestSignedDelta) then
+            bestSignedDelta = signedDelta
+            bestTarget = MathUtils.NormalizeHeading(targetHeading)
+        end
+    end
+    if bestSignedDelta == nil or bestTarget == nil then
+        return
+    end
+    local magnitude = math.abs(bestSignedDelta)
+    if magnitude <= 2 then
+        Controller.state.axis_turn_hint = "Hold course"
+    elseif bestSignedDelta > 0 then
+        Controller.state.axis_turn_hint = string.format("Turn Right %.0f deg", magnitude)
+    else
+        Controller.state.axis_turn_hint = string.format("Turn Left %.0f deg", magnitude)
+    end
 end
 
 function Controller.Update()
@@ -427,6 +465,7 @@ function Controller.BuildViewModel()
     end
 
     return {
+        enabled = settings.enabled and true or false,
         selected_profile_label = profile ~= nil and profile.label or "No Profile",
         world_heading_text = Controller.state.world_heading ~= nil
             and string.format("%.0f deg %s", Controller.state.world_heading, Controller.state.world_heading_label)
@@ -437,6 +476,7 @@ function Controller.BuildViewModel()
         current_speed = Controller.state.current_speed,
         current_turn_speed = Controller.state.current_turn_speed,
         speed_source = Controller.state.speed_source,
+        heading_source = Controller.state.heading_source,
         base_speed = profile ~= nil and profile.base_speed or 0,
         preferred_axis_text = MathUtils.AxisLabel(Controller.state.preferred_axis),
         current_axis_text = MathUtils.AxisLabel(Controller.state.current_axis),
@@ -444,13 +484,17 @@ function Controller.BuildViewModel()
         estimated_penalty_pct = Controller.state.axis_penalty_pct,
         deviation_deg = tonumber(Controller.state.axis_deviation) or 0,
         axis_state_label = Controller.state.axis_state_label,
+        axis_turn_hint = Controller.state.axis_turn_hint,
+        axis_boost_active = Controller.state.axis_boost_active,
         speed_bar_max = Controller.state.speed_bar_max,
         compass_bands = compassBands,
         arrow_text = Controller.state.travel_heading ~= nil and MathUtils.HeadingArrow(Controller.state.travel_heading) or "^",
         arrow_color = buildArrowColor(Controller.state.axis_efficiency_pct),
+        toggle_button_size = tonumber(settings.button_size) or 48,
         show_main_window = settings.show_main_window and true or false,
         show_speed_window = settings.show_speed_window and true or false,
-        show_compass_window = settings.show_compass_window and true or false
+        show_compass_window = settings.show_compass_window and true or false,
+        show_helm_window = settings.show_helm_window and true or false
     }
 end
 
@@ -463,6 +507,13 @@ function Controller.Initialize()
     end
     Controller.state.speed_bar_max = Constants.DEFAULT_SPEED_BAR_MAX
     resetTravelSamples()
+end
+
+function Controller.IsTelemetryActive()
+    return (tonumber(Controller.state.current_speed) or 0) > Constants.MIN_TRAVEL_SPEED_DISPLAY
+        or math.abs(tonumber(Controller.state.current_turn_speed) or 0) > Constants.VEHICLE_TURN_SPEED_THRESHOLD
+        or Controller.state.world_heading ~= nil
+        or Controller.state.travel_heading ~= nil
 end
 
 return Controller

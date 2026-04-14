@@ -5,13 +5,16 @@ local Ui = {
     window = nil,
     speed_window = nil,
     compass_window = nil,
+    helm_window = nil,
     toggle_window = nil,
     actions = nil,
     labels = {},
     buttons = {},
+    sliders = {},
     compass_labels = {},
     speed = {},
-    compass = {}
+    compass = {},
+    helm = {}
 }
 
 local function safeCall(fn)
@@ -24,17 +27,25 @@ end
 
 local function safeShow(widget, visible)
     if widget ~= nil and widget.Show ~= nil then
-        pcall(function()
-            widget:Show(visible and true or false)
-        end)
+        local want = visible and true or false
+        if widget.__nuzi_visible ~= want then
+            widget.__nuzi_visible = want
+            pcall(function()
+                widget:Show(want)
+            end)
+        end
     end
 end
 
 local function safeSetText(widget, text)
     if widget ~= nil and widget.SetText ~= nil then
-        pcall(function()
-            widget:SetText(tostring(text or ""))
-        end)
+        local nextText = tostring(text or "")
+        if widget.__nuzi_text ~= nextText then
+            widget.__nuzi_text = nextText
+            pcall(function()
+                widget:SetText(nextText)
+            end)
+        end
     end
 end
 
@@ -42,9 +53,18 @@ local function safeSetColor(widget, color)
     if widget == nil or widget.style == nil or widget.style.SetColor == nil or type(color) ~= "table" then
         return
     end
-    pcall(function()
-        widget.style:SetColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
-    end)
+    local signature = table.concat({
+        tostring(color[1] or 1),
+        tostring(color[2] or 1),
+        tostring(color[3] or 1),
+        tostring(color[4] or 1)
+    }, ",")
+    if widget.__nuzi_color ~= signature then
+        widget.__nuzi_color = signature
+        pcall(function()
+            widget.style:SetColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+        end)
+    end
 end
 
 local function safeSetExtent(widget, width, height)
@@ -55,29 +75,91 @@ local function safeSetExtent(widget, width, height)
     end
 end
 
+local function safeSetTexture(drawable, path)
+    if drawable ~= nil and drawable.SetTexture ~= nil and type(path) == "string" and path ~= "" then
+        if drawable.__nuzi_texture ~= path then
+            drawable.__nuzi_texture = path
+            pcall(function()
+                drawable:SetTexture(path)
+            end)
+        end
+    end
+end
+
+local function safeSetSliderValue(slider, value)
+    if slider ~= nil and slider.SetValue ~= nil then
+        local nextValue = tonumber(value) or 0
+        if slider.__nuzi_slider_value ~= nextValue then
+            slider.__nuzi_slider_value = nextValue
+            pcall(function()
+                slider:SetValue(nextValue, false)
+            end)
+        end
+    end
+end
+
 local function safeSetBarValue(widget, value)
     if widget ~= nil and widget.SetValue ~= nil then
-        pcall(function()
-            widget:SetValue(value)
-        end)
+        local nextValue = tonumber(value) or 0
+        if widget.__nuzi_bar_value ~= nextValue then
+            widget.__nuzi_bar_value = nextValue
+            pcall(function()
+                widget:SetValue(nextValue)
+            end)
+        end
     end
 end
 
 local function safeSetBarMinMax(widget, minValue, maxValue)
     if widget ~= nil and widget.SetMinMaxValues ~= nil then
-        pcall(function()
-            widget:SetMinMaxValues(minValue, maxValue)
-        end)
+        local minNum = tonumber(minValue) or 0
+        local maxNum = tonumber(maxValue) or 0
+        local signature = tostring(minNum) .. ":" .. tostring(maxNum)
+        if widget.__nuzi_bar_range ~= signature then
+            widget.__nuzi_bar_range = signature
+            pcall(function()
+                widget:SetMinMaxValues(minNum, maxNum)
+            end)
+        end
     end
+end
+
+local function applyCommonWindowBehavior(window)
+    if window == nil then
+        return
+    end
+    safeCall(function()
+        window:SetCloseOnEscape(false)
+    end)
+    safeCall(function()
+        window:EnableHidingIsRemove(false)
+    end)
+    safeCall(function()
+        window:SetUILayer("normal")
+    end)
+end
+
+local function isShiftDown()
+    if api ~= nil and api.Input ~= nil and api.Input.IsShiftKeyDown ~= nil then
+        local ok, down = pcall(function()
+            return api.Input:IsShiftKeyDown()
+        end)
+        if ok then
+            return down and true or false
+        end
+    end
+    return false
 end
 
 local function createWindow(id)
     if api.Interface == nil or api.Interface.CreateEmptyWindow == nil then
         return nil
     end
-    return safeCall(function()
+    local window = safeCall(function()
         return api.Interface:CreateEmptyWindow(id, "UIParent")
     end)
+    applyCommonWindowBehavior(window)
+    return window
 end
 
 local function createBackground(window)
@@ -174,13 +256,116 @@ local function createButton(id, parent, text, x, y, width, height, onClick)
     return button
 end
 
+local function createPlainButton(parent, id, x, y, width, height, onClick)
+    if parent == nil or parent.CreateChildWidget == nil then
+        return nil
+    end
+    local button = safeCall(function()
+        return parent:CreateChildWidget("button", id, 0, true)
+    end)
+    if button == nil then
+        return nil
+    end
+    safeCall(function()
+        button:AddAnchor("TOPLEFT", parent, x, y)
+    end)
+    safeSetExtent(button, width, height)
+    safeSetText(button, "")
+    if button.SetHandler ~= nil and onClick ~= nil then
+        button:SetHandler("OnClick", onClick)
+    end
+    if button.Enable ~= nil then
+        safeCall(function()
+            button:Enable(true)
+        end)
+    end
+    safeShow(button, true)
+    return button
+end
+
+local function createSlider(id, parent, x, y, width, minValue, maxValue, step)
+    if api._Library == nil or api._Library.UI == nil or api._Library.UI.CreateSlider == nil then
+        return nil
+    end
+    local slider = safeCall(function()
+        return api._Library.UI.CreateSlider(id, parent)
+    end)
+    if slider == nil then
+        return nil
+    end
+    safeCall(function()
+        slider:AddAnchor("TOPLEFT", x, y)
+    end)
+    safeSetExtent(slider, width, 26)
+    safeCall(function()
+        slider:SetMinMaxValues(minValue, maxValue)
+    end)
+    if slider.SetStep ~= nil then
+        safeCall(function()
+            slider:SetStep(step)
+        end)
+    elseif slider.SetValueStep ~= nil then
+        safeCall(function()
+            slider:SetValueStep(step)
+        end)
+    end
+    safeShow(slider, true)
+    return slider
+end
+
+local function assetPath(relativePath)
+    local baseDir = type(api) == "table" and type(api.baseDir) == "string" and api.baseDir or ""
+    baseDir = string.gsub(baseDir, "\\", "/")
+    if baseDir ~= "" then
+        return string.gsub(baseDir .. "/" .. tostring(relativePath or ""), "/+", "/")
+    end
+    return tostring(relativePath or "")
+end
+
+local function createImageDrawable(widget, id, path, layer, width, height)
+    if widget == nil then
+        return nil
+    end
+    local drawable = safeCall(function()
+        if widget.CreateImageDrawable ~= nil then
+            return widget:CreateImageDrawable(id, layer or "artwork")
+        end
+        if widget.CreateDrawable ~= nil then
+            return widget:CreateDrawable(id, layer or "artwork")
+        end
+        return nil
+    end)
+    if drawable == nil then
+        return nil
+    end
+    safeSetTexture(drawable, path)
+    if drawable.AddAnchor ~= nil then
+        safeCall(function()
+            drawable:AddAnchor("TOPLEFT", widget, 0, 0)
+        end)
+    end
+    if drawable.SetExtent ~= nil then
+        safeCall(function()
+            drawable:SetExtent(width, height)
+        end)
+    end
+    if drawable.Show ~= nil then
+        safeCall(function()
+            drawable:Show(true)
+        end)
+    end
+    return drawable
+end
+
 local function createEmptyWindow(id)
     if api.Interface == nil or api.Interface.CreateEmptyWindow == nil then
         return nil
     end
-    return safeCall(function()
+    local window = safeCall(function()
         return api.Interface:CreateEmptyWindow(id, "UIParent")
     end)
+    applyCommonWindowBehavior(window)
+    return window
 end
 
 local function createStatusBar(parent, id, x, y, width, height)
@@ -232,7 +417,7 @@ local function attachDrag(window, dragTarget, key)
         return nil, nil
     end
     local function onDragStart()
-        if api.Input ~= nil and api.Input.IsShiftKeyDown ~= nil and not api.Input:IsShiftKeyDown() then
+        if not isShiftDown() then
             return
         end
         if window.StartMoving ~= nil then
@@ -305,17 +490,45 @@ local function createToggleWindow()
     if window == nil then
         return nil
     end
-    safeSetExtent(window, 96, 28)
-    local dragBar = createLabel(window, "NuziVehiclesToggleDragBar", 0, 0, 96, 28, 12, { 1, 1, 1, 0 }, getAlignLeft())
+    local defaultSize = tonumber(Constants.DEFAULT_SETTINGS.button_size) or 48
+    safeSetExtent(window, defaultSize, defaultSize)
+    local dragBar = createLabel(window, "NuziVehiclesToggleDragBar", 0, 0, defaultSize, defaultSize, 12, { 1, 1, 1, 0 }, getAlignLeft())
+    Ui.labels.toggle_drag_bar = dragBar
     safeSetText(dragBar, "")
     attachDrag(window, dragBar, "button")
-    Ui.buttons.toggle = createButton("NuziVehiclesToggleButton", window, "Nuzi Vehicle", 0, 0, 96, 28, function()
+    Ui.buttons.toggle = createPlainButton(window, "NuziVehiclesToggleButton", 0, 0, defaultSize, defaultSize, function()
         if Ui.actions ~= nil and Ui.actions.toggle_main ~= nil then
             Ui.actions.toggle_main()
         end
     end)
+    Ui.labels.toggle_icon = createImageDrawable(
+        window,
+        "NuziVehiclesToggleIcon",
+        assetPath("nuzi-vehicles/icon_launcher.png"),
+        "artwork",
+        defaultSize,
+        defaultSize
+    )
     attachDragTargets(window, "button", { Ui.buttons.toggle })
     return window
+end
+
+local function applyToggleWindowLayout(size)
+    local resolvedSize = math.max(36, math.min(96, math.floor((tonumber(size) or 48) + 0.5)))
+    if Ui.toggle_window ~= nil then
+        safeSetExtent(Ui.toggle_window, resolvedSize, resolvedSize)
+    end
+    if Ui.labels.toggle_icon ~= nil and Ui.labels.toggle_icon.SetExtent ~= nil then
+        safeCall(function()
+            Ui.labels.toggle_icon:SetExtent(resolvedSize, resolvedSize)
+        end)
+    end
+    if Ui.buttons.toggle ~= nil then
+        safeSetExtent(Ui.buttons.toggle, resolvedSize, resolvedSize)
+    end
+    if Ui.labels.toggle_drag_bar ~= nil then
+        safeSetExtent(Ui.labels.toggle_drag_bar, resolvedSize, resolvedSize)
+    end
 end
 
 local function createMainWindow()
@@ -323,40 +536,63 @@ local function createMainWindow()
     if window == nil then
         return nil
     end
-    safeSetExtent(window, 390, 172)
+    safeSetExtent(window, 390, 202)
     createBackground(window)
     local dragBar = createLabel(window, "NuziVehiclesDragBar", 0, 0, 390, 20, 12, { 1, 1, 1, 0 }, getAlignLeft())
     safeSetText(dragBar, "")
     attachDrag(window, dragBar, "main")
 
     Ui.labels.title = createLabel(window, "NuziVehiclesTitle", 12, 6, 180, 18, 14, { 1, 1, 1, 1 }, getAlignLeft())
-    Ui.labels.profile = createLabel(window, "NuziVehiclesProfile", 12, 28, 362, 18, 13, { 0.9, 0.94, 1, 1 }, getAlignLeft())
-    Ui.labels.heading = createLabel(window, "NuziVehiclesHeading", 12, 50, 362, 18, 12, { 0.92, 0.86, 0.58, 1 }, getAlignLeft())
-    Ui.labels.speed = createLabel(window, "NuziVehiclesSpeed", 12, 72, 362, 18, 12, { 0.95, 0.95, 0.95, 1 }, getAlignLeft())
-    Ui.labels.base = createLabel(window, "NuziVehiclesBase", 12, 94, 362, 18, 12, { 0.84, 0.9, 0.96, 1 }, getAlignLeft())
-    Ui.labels.estimate = createLabel(window, "NuziVehiclesEstimate", 12, 116, 362, 18, 12, { 0.84, 0.9, 0.96, 1 }, getAlignLeft())
-    Ui.labels.sector = createLabel(window, "NuziVehiclesSector", 12, 138, 362, 18, 12, { 0.95, 0.88, 0.58, 1 }, getAlignLeft())
+    Ui.labels.profile = createLabel(window, "NuziVehiclesProfile", 12, 30, 228, 18, 13, { 0.9, 0.94, 1, 1 }, getAlignLeft())
+    Ui.labels.heading = createLabel(window, "NuziVehiclesHeading", 12, 52, 228, 18, 12, { 0.92, 0.86, 0.58, 1 }, getAlignLeft())
+    Ui.labels.speed = createLabel(window, "NuziVehiclesSpeed", 12, 74, 228, 18, 12, { 0.95, 0.95, 0.95, 1 }, getAlignLeft())
+    Ui.labels.base = createLabel(window, "NuziVehiclesBase", 12, 96, 228, 18, 12, { 0.84, 0.9, 0.96, 1 }, getAlignLeft())
+    Ui.labels.estimate = createLabel(window, "NuziVehiclesEstimate", 12, 118, 228, 18, 12, { 0.84, 0.9, 0.96, 1 }, getAlignLeft())
+    Ui.labels.sector = createLabel(window, "NuziVehiclesSector", 12, 140, 228, 18, 12, { 0.95, 0.88, 0.58, 1 }, getAlignLeft())
+    Ui.labels.toggle_size = createLabel(window, "NuziVehiclesToggleSizeLabel", 12, 168, 98, 18, 12, { 0.95, 0.88, 0.58, 1 }, getAlignLeft())
+    Ui.labels.toggle_size_value = createLabel(window, "NuziVehiclesToggleSizeValue", 350, 168, 28, 18, 12, { 0.95, 0.95, 0.95, 1 }, getAlignCenter())
+    Ui.sliders.toggle_size = createSlider("NuziVehiclesToggleSizeSlider", window, 106, 166, 238, 36, 96, 1)
 
-    Ui.buttons.prev = createButton("NuziVehiclesPrev", window, "<", 258, 24, 34, 24, function()
+    Ui.buttons.prev = createButton("NuziVehiclesPrev", window, "<", 244, 24, 28, 24, function()
         if Ui.actions ~= nil and Ui.actions.previous_profile ~= nil then
             Ui.actions.previous_profile()
         end
     end)
-    Ui.buttons.next = createButton("NuziVehiclesNext", window, ">", 298, 24, 34, 24, function()
+    Ui.buttons.next = createButton("NuziVehiclesNext", window, ">", 278, 24, 28, 24, function()
         if Ui.actions ~= nil and Ui.actions.next_profile ~= nil then
             Ui.actions.next_profile()
         end
     end)
-    Ui.buttons.speed_toggle = createButton("NuziVehiclesSpeedToggle", window, "Speed HUD", 250, 66, 124, 24, function()
+    Ui.buttons.enabled_toggle = createButton("NuziVehiclesEnabledToggle", window, "Pause", 312, 24, 62, 24, function()
+        if Ui.actions ~= nil and Ui.actions.toggle_enabled ~= nil then
+            Ui.actions.toggle_enabled()
+        end
+    end)
+    Ui.buttons.speed_toggle = createButton("NuziVehiclesSpeedToggle", window, "Speed", 254, 64, 118, 22, function()
         if Ui.actions ~= nil and Ui.actions.toggle_speed ~= nil then
             Ui.actions.toggle_speed()
         end
     end)
-    Ui.buttons.compass_toggle = createButton("NuziVehiclesCompassToggle", window, "Compass", 250, 98, 124, 24, function()
+    Ui.buttons.compass_toggle = createButton("NuziVehiclesCompassToggle", window, "Compass", 254, 90, 118, 22, function()
         if Ui.actions ~= nil and Ui.actions.toggle_compass ~= nil then
             Ui.actions.toggle_compass()
         end
     end)
+    Ui.buttons.helm_toggle = createButton("NuziVehiclesHelmToggle", window, "Helm", 254, 116, 118, 22, function()
+        if Ui.actions ~= nil and Ui.actions.toggle_helm ~= nil then
+            Ui.actions.toggle_helm()
+        end
+    end)
+    if Ui.sliders.toggle_size ~= nil and Ui.sliders.toggle_size.SetHandler ~= nil then
+        Ui.sliders.toggle_size:SetHandler("OnSliderChanged", function(_, value)
+            local numeric = math.floor((tonumber(value) or Constants.DEFAULT_SETTINGS.button_size or 48) + 0.5)
+            safeSetText(Ui.labels.toggle_size_value, tostring(numeric))
+            applyToggleWindowLayout(numeric)
+            if Ui.actions ~= nil and Ui.actions.set_button_size ~= nil then
+                Ui.actions.set_button_size(numeric)
+            end
+        end)
+    end
 
     attachDragTargets(window, "main", {
         Ui.labels.title,
@@ -368,8 +604,10 @@ local function createMainWindow()
         Ui.labels.sector,
         Ui.buttons.prev,
         Ui.buttons.next,
+        Ui.buttons.enabled_toggle,
         Ui.buttons.speed_toggle,
-        Ui.buttons.compass_toggle
+        Ui.buttons.compass_toggle,
+        Ui.buttons.helm_toggle
     })
 
     return window
@@ -465,20 +703,60 @@ local function createCompassWindow()
     return window
 end
 
+local function createHelmWindow()
+    local window = createWindow(Constants.HELM_WINDOW_ID)
+    if window == nil then
+        return nil
+    end
+    safeSetExtent(window, 236, 110)
+    createBackground(window)
+    local dragBar = createLabel(window, "NuziVehiclesHelmDragBar", 0, 0, 236, 20, 12, { 1, 1, 1, 0 }, getAlignLeft())
+    safeSetText(dragBar, "")
+    attachDrag(window, dragBar, "helm")
+
+    Ui.helm.title = createLabel(window, "NuziVehiclesHelmTitle", 10, 6, 150, 16, 13, { 1, 1, 1, 1 }, getAlignLeft())
+    Ui.helm.close = createButton("NuziVehiclesHelmClose", window, "X", 204, 4, 22, 20, function()
+        if Ui.actions ~= nil and Ui.actions.toggle_helm ~= nil then
+            Ui.actions.toggle_helm()
+        end
+    end)
+    Ui.helm.profile = createLabel(window, "NuziVehiclesHelmProfile", 10, 24, 216, 16, 12, { 0.92, 0.86, 0.58, 1 }, getAlignLeft())
+    Ui.helm.speed = createLabel(window, "NuziVehiclesHelmSpeed", 10, 42, 88, 20, 18, { 0.95, 0.95, 0.95, 1 }, getAlignLeft())
+    Ui.helm.turn_hint = createLabel(window, "NuziVehiclesHelmTurnHint", 102, 44, 124, 18, 13, { 0.95, 0.88, 0.58, 1 }, getAlignLeft())
+    Ui.helm.axis = createLabel(window, "NuziVehiclesHelmAxis", 10, 64, 216, 14, 11, { 0.82, 0.9, 0.96, 1 }, getAlignLeft())
+    Ui.helm.efficiency = createLabel(window, "NuziVehiclesHelmEfficiency", 10, 78, 216, 14, 11, { 0.88, 0.88, 0.72, 1 }, getAlignLeft())
+    Ui.helm.heading = createLabel(window, "NuziVehiclesHelmHeading", 10, 92, 216, 14, 11, { 0.84, 0.9, 0.96, 1 }, getAlignLeft())
+
+    attachDragTargets(window, "helm", {
+        Ui.helm.title,
+        Ui.helm.close,
+        Ui.helm.profile,
+        Ui.helm.speed,
+        Ui.helm.turn_hint,
+        Ui.helm.axis,
+        Ui.helm.efficiency
+        ,
+        Ui.helm.heading
+    })
+    return window
+end
+
 function Ui.Init(actions)
     Ui.actions = actions
     Ui.toggle_window = createToggleWindow()
     Ui.window = createMainWindow()
     Ui.speed_window = createSpeedWindow()
     Ui.compass_window = createCompassWindow()
+    Ui.helm_window = createHelmWindow()
     safeShow(Ui.toggle_window, true)
     safeShow(Ui.window, true)
     safeShow(Ui.speed_window, true)
     safeShow(Ui.compass_window, true)
+    safeShow(Ui.helm_window, true)
 end
 
 function Ui.Destroy()
-    for _, window in ipairs({ Ui.window, Ui.speed_window, Ui.compass_window, Ui.toggle_window }) do
+    for _, window in ipairs({ Ui.window, Ui.speed_window, Ui.compass_window, Ui.helm_window, Ui.toggle_window }) do
         if window ~= nil then
             safeShow(window, false)
             if window.Destroy ~= nil then
@@ -491,13 +769,16 @@ function Ui.Destroy()
     Ui.window = nil
     Ui.speed_window = nil
     Ui.compass_window = nil
+    Ui.helm_window = nil
     Ui.toggle_window = nil
     Ui.actions = nil
     Ui.labels = {}
     Ui.buttons = {}
+    Ui.sliders = {}
     Ui.compass_labels = {}
     Ui.speed = {}
     Ui.compass = {}
+    Ui.helm = {}
 end
 
 function Ui.ApplyPositions(settings)
@@ -518,6 +799,12 @@ function Ui.ApplyPositions(settings)
         safeCall(function()
             Ui.compass_window:RemoveAllAnchors()
             Ui.compass_window:AddAnchor("TOPLEFT", "UIParent", tonumber(settings.compass_x) or 560, tonumber(settings.compass_y) or 170)
+        end)
+    end
+    if Ui.helm_window ~= nil and Ui.helm_window.RemoveAllAnchors ~= nil and Ui.helm_window.AddAnchor ~= nil then
+        safeCall(function()
+            Ui.helm_window:RemoveAllAnchors()
+            Ui.helm_window:AddAnchor("TOPLEFT", "UIParent", tonumber(settings.helm_x) or 860, tonumber(settings.helm_y) or 170)
         end)
     end
     if Ui.toggle_window ~= nil and Ui.toggle_window.RemoveAllAnchors ~= nil and Ui.toggle_window.AddAnchor ~= nil then
@@ -551,6 +838,7 @@ function Ui.GetPositions()
     positions.main_x, positions.main_y = readOffset(Ui.window)
     positions.speed_x, positions.speed_y = readOffset(Ui.speed_window)
     positions.compass_x, positions.compass_y = readOffset(Ui.compass_window)
+    positions.helm_x, positions.helm_y = readOffset(Ui.helm_window)
     positions.button_x, positions.button_y = readOffset(Ui.toggle_window)
     return positions
 end
@@ -563,9 +851,7 @@ function Ui.Render(viewModel)
     safeShow(Ui.window, viewModel.show_main_window and true or false)
     if Ui.toggle_window ~= nil then
         safeShow(Ui.toggle_window, true)
-        if Ui.buttons.toggle ~= nil then
-            safeSetText(Ui.buttons.toggle, viewModel.show_main_window and "Hide NV" or "Show NV")
-        end
+        applyToggleWindowLayout(viewModel.toggle_button_size)
     end
 
     if viewModel.show_main_window then
@@ -573,21 +859,31 @@ function Ui.Render(viewModel)
         safeSetText(
             Ui.labels.profile,
             string.format(
-                "Boat: %s | Source: %s",
+                "%s | %s",
                 tostring(viewModel.selected_profile_label or ""),
+                viewModel.enabled and "Live" or "Paused"
+            )
+        )
+        safeSetText(
+            Ui.labels.heading,
+            string.format(
+                "Heading: %s",
+                tostring(viewModel.world_heading_text or "--")
+            )
+        )
+        safeSetText(
+            Ui.labels.speed,
+            string.format(
+                "Speed: %.1f m/s | %s",
+                tonumber(viewModel.current_speed) or 0,
                 tostring(viewModel.speed_source or "Idle")
             )
         )
-        safeSetText(Ui.labels.heading, "World Heading: " .. tostring(viewModel.world_heading_text or "--"))
-        safeSetText(
-            Ui.labels.speed,
-            string.format("Current Speed: %.1f m/s", tonumber(viewModel.current_speed) or 0)
-        )
-        safeSetText(Ui.labels.base, "Travel Direction: " .. tostring(viewModel.travel_direction_text or "--"))
+        safeSetText(Ui.labels.base, "Travel: " .. tostring(viewModel.travel_direction_text or "--"))
         safeSetText(
             Ui.labels.estimate,
             string.format(
-                "Preferred Axis: %s | Current Axis: %s",
+                "Axis: %s | %s",
                 tostring(viewModel.preferred_axis_text or "Unknown"),
                 tostring(viewModel.current_axis_text or "Unknown")
             )
@@ -595,19 +891,25 @@ function Ui.Render(viewModel)
         safeSetText(
             Ui.labels.sector,
             string.format(
-                "Efficiency: %.0f%% | Penalty: %+.0f%% | Deviation: %.0f deg",
+                "Eff %.0f%% | Dev %.0f deg",
                 tonumber(viewModel.estimated_efficiency_pct) or 0,
-                tonumber(viewModel.estimated_penalty_pct) or 0,
                 tonumber(viewModel.deviation_deg) or 0
             )
         )
-        safeSetText(Ui.buttons.speed_toggle, viewModel.show_speed_window and "Hide Speed" or "Show Speed")
-        safeSetText(Ui.buttons.compass_toggle, viewModel.show_compass_window and "Hide Compass" or "Show Compass")
+        safeSetText(Ui.labels.toggle_size, "Launcher")
+        safeSetText(Ui.labels.toggle_size_value, tostring(math.floor((tonumber(viewModel.toggle_button_size) or 48) + 0.5)))
+        safeSetSliderValue(Ui.sliders.toggle_size, tonumber(viewModel.toggle_button_size) or 48)
+        safeSetText(Ui.buttons.enabled_toggle, viewModel.enabled and "Pause" or "Resume")
+        safeSetText(Ui.buttons.speed_toggle, viewModel.show_speed_window and "Speed On" or "Speed Off")
+        safeSetText(Ui.buttons.compass_toggle, viewModel.show_compass_window and "Compass On" or "Compass Off")
+        if Ui.buttons.helm_toggle ~= nil then
+            safeSetText(Ui.buttons.helm_toggle, viewModel.show_helm_window and "Helm On" or "Helm Off")
+        end
     end
 
     safeShow(Ui.speed_window, viewModel.show_speed_window and true or false)
     if viewModel.show_speed_window then
-        safeSetText(Ui.speed.title, "Travel Speed")
+        safeSetText(Ui.speed.title, viewModel.enabled and "Travel Speed" or "Travel Speed (Paused)")
         safeSetText(Ui.speed.value, string.format("%.1f m/s", tonumber(viewModel.current_speed) or 0))
         safeSetText(Ui.speed.modifier, tostring(viewModel.speed_source or "Idle"))
         safeSetBarMinMax(Ui.speed.bar, 0, tonumber(viewModel.speed_bar_max) or Constants.DEFAULT_SPEED_BAR_MAX)
@@ -616,8 +918,15 @@ function Ui.Render(viewModel)
 
     safeShow(Ui.compass_window, viewModel.show_compass_window and true or false)
     if viewModel.show_compass_window then
-        safeSetText(Ui.compass.title, "Nautical Compass")
-        safeSetText(Ui.compass.heading, "Heading: " .. tostring(viewModel.world_heading_text or "--"))
+        safeSetText(Ui.compass.title, viewModel.enabled and "Nautical Compass" or "Nautical Compass (Paused)")
+        safeSetText(
+            Ui.compass.heading,
+            string.format(
+                "Heading [%s]: %s",
+                tostring(viewModel.heading_source or "Idle"),
+                tostring(viewModel.world_heading_text or "--")
+            )
+        )
         safeSetText(Ui.compass.travel, "Travel: " .. tostring(viewModel.travel_direction_text or "--"))
         safeSetText(Ui.compass.arrow, tostring(viewModel.arrow_text or "^"))
         safeSetColor(Ui.compass.arrow, viewModel.arrow_color or { 1, 0.25, 0.25, 1 })
@@ -659,6 +968,32 @@ function Ui.Render(viewModel)
                 end
             end
         end
+    end
+
+    safeShow(Ui.helm_window, viewModel.show_helm_window and true or false)
+    if viewModel.show_helm_window then
+        safeSetText(Ui.helm.title, viewModel.enabled and "Helm" or "Helm (Paused)")
+        safeSetText(Ui.helm.profile, tostring(viewModel.selected_profile_label or "No Profile"))
+        safeSetText(Ui.helm.speed, string.format("%.1f m/s", tonumber(viewModel.current_speed) or 0))
+        safeSetText(Ui.helm.heading, tostring(viewModel.world_heading_text or "--"))
+        safeSetText(
+            Ui.helm.axis,
+            string.format(
+                "Axis: %s | Source: %s",
+                tostring(viewModel.preferred_axis_text or "Unknown"),
+                tostring(viewModel.heading_source or "Idle")
+            )
+        )
+        safeSetText(Ui.helm.turn_hint, tostring(viewModel.axis_turn_hint or "Turn: --"))
+        safeSetText(
+            Ui.helm.efficiency,
+            string.format(
+                "%s | %.0f deg off | Eff %.0f%%",
+                viewModel.axis_boost_active and "Boost Held" or "Boost Lost",
+                tonumber(viewModel.estimated_efficiency_pct) or 0,
+                tonumber(viewModel.deviation_deg) or 0
+            )
+        )
     end
 end
 

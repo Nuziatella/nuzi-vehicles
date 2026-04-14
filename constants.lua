@@ -3,7 +3,7 @@ local Constants = {}
 Constants.ADDON_ID = "nuzi_vehicles"
 Constants.ADDON_NAME = "Nuzi Vehicles"
 Constants.ADDON_AUTHOR = "Nuzi"
-Constants.ADDON_VERSION = "1.0.6"
+Constants.ADDON_VERSION = "1.0.7"
 Constants.ADDON_DESC = "Vehicle compass and speed profiler"
 Constants.SETTINGS_FILE_PATH = "nuzi-vehicles/.data/settings.txt"
 Constants.LEGACY_SETTINGS_FILE_PATH = "nuzi-vehicles/settings.txt"
@@ -11,6 +11,7 @@ Constants.LEGACY_SETTINGS_FILE_PATH = "nuzi-vehicles/settings.txt"
 Constants.WINDOW_ID = "NuziVehiclesCompassMain"
 Constants.SPEED_WINDOW_ID = "NuziVehiclesCompassSpeed"
 Constants.COMPASS_WINDOW_ID = "NuziVehiclesCompassHeading"
+Constants.HELM_WINDOW_ID = "NuziVehiclesHelm"
 Constants.TOGGLE_WINDOW_ID = "NuziVehiclesCompassToggle"
 
 Constants.UPDATE_INTERVAL_MS = 120
@@ -27,6 +28,7 @@ Constants.TRAVEL_SPEED_FALL_SMOOTHING = 0.4
 Constants.MIN_TRAVEL_SPEED_DISPLAY = 0.05
 Constants.VEHICLE_TURN_SPEED_THRESHOLD = 0.01
 Constants.VEHICLE_HEADING_STALE_MS = 900
+Constants.AXIS_BOOST_MAX_DEVIATION = 20
 
 Constants.DEFAULT_SETTINGS = {
     enabled = true,
@@ -37,11 +39,15 @@ Constants.DEFAULT_SETTINGS = {
     speed_y = 170,
     compass_x = 560,
     compass_y = 170,
+    helm_x = 860,
+    helm_y = 170,
     button_x = 40,
     button_y = 220,
+    button_size = 48,
     show_main_window = true,
     show_speed_window = true,
-    show_compass_window = true
+    show_compass_window = true,
+    show_helm_window = false
 }
 
 return Constants
