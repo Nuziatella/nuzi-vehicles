@@ -62,4 +62,4 @@ That makes it the better tool when you care about heading quality instead of jus
 
 ## Version
 
-Current version: `1.0.6`
+Current version: `1.0.8`
