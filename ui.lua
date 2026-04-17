@@ -17,6 +17,8 @@ local Ui = {
     helm = {}
 }
 
+local detectedAddonDir = nil
+
 local function safeCall(fn)
     local ok, value = pcall(fn)
     if ok then
@@ -319,12 +321,82 @@ local function createSlider(id, parent, x, y, width, minValue, maxValue, step)
 end
 
 local function assetPath(relativePath)
-    local baseDir = type(api) == "table" and type(api.baseDir) == "string" and api.baseDir or ""
-    baseDir = string.gsub(baseDir, "\\", "/")
-    if baseDir ~= "" then
-        return string.gsub(baseDir .. "/" .. tostring(relativePath or ""), "/+", "/")
+    local function normalize(path)
+        return string.gsub(tostring(path or ""), "\\", "/")
     end
-    return tostring(relativePath or "")
+    local function fileExists(path)
+        if type(io) ~= "table" or type(io.open) ~= "function" then
+            return false
+        end
+        local handle = nil
+        local ok = pcall(function()
+            handle = io.open(path, "rb")
+        end)
+        if ok and handle ~= nil then
+            pcall(function()
+                handle:close()
+            end)
+            return true
+        end
+        return false
+    end
+    local function getAddonDir()
+        if detectedAddonDir ~= nil then
+            if type(detectedAddonDir) == "string" and detectedAddonDir ~= "" then
+                return detectedAddonDir
+            end
+            return nil
+        end
+        local source = nil
+        if type(debug) == "table" and type(debug.getinfo) == "function" then
+            local info = debug.getinfo(1, "S")
+            source = type(info) == "table" and tostring(info.source or "") or nil
+        end
+        if type(source) == "string" and string.sub(source, 1, 1) == "@" then
+            source = normalize(string.sub(source, 2))
+            detectedAddonDir = string.match(source, "^(.*)/[^/]+$")
+            if detectedAddonDir ~= nil and detectedAddonDir ~= "" then
+                return detectedAddonDir
+            end
+        end
+        detectedAddonDir = false
+        return nil
+    end
+
+    local rawRelative = normalize(relativePath)
+    local strippedRelative = string.match(rawRelative, "^[^/]+/(.+)$") or rawRelative
+    local candidates = {}
+    local seen = {}
+    local function addCandidate(path)
+        path = normalize(path)
+        if path == "" or seen[path] then
+            return
+        end
+        seen[path] = true
+        candidates[#candidates + 1] = path
+    end
+
+    local addonDir = getAddonDir()
+    if type(addonDir) == "string" and addonDir ~= "" then
+        addCandidate(addonDir .. "/" .. strippedRelative)
+        addCandidate(addonDir .. "/" .. rawRelative)
+    end
+
+    local baseDir = normalize(type(api) == "table" and type(api.baseDir) == "string" and api.baseDir or "")
+    if baseDir ~= "" then
+        addCandidate(baseDir .. "/" .. rawRelative)
+        addCandidate(baseDir .. "/" .. strippedRelative)
+    end
+
+    addCandidate(rawRelative)
+    addCandidate(strippedRelative)
+
+    for _, candidate in ipairs(candidates) do
+        if fileExists(candidate) then
+            return candidate
+        end
+    end
+    return candidates[1] or rawRelative
 end
 
 local function createImageDrawable(widget, id, path, layer, width, height)
