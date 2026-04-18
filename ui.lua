@@ -1,5 +1,6 @@
 local api = require("api")
 local Constants = require("nuzi-vehicles/constants")
+local CreateNuziSlider = nil
 
 local Ui = {
     window = nil,
@@ -16,6 +17,10 @@ local Ui = {
     compass = {},
     helm = {}
 }
+
+pcall(function()
+    CreateNuziSlider = require("nuzi-core/ui/slider")
+end)
 
 local detectedAddonDir = nil
 
@@ -291,12 +296,17 @@ local function createPlainButton(parent, id, x, y, width, height, onClick)
 end
 
 local function createSlider(id, parent, x, y, width, minValue, maxValue, step)
-    if api._Library == nil or api._Library.UI == nil or api._Library.UI.CreateSlider == nil then
-        return nil
+    local slider = nil
+    if CreateNuziSlider ~= nil then
+        slider = safeCall(function()
+            return CreateNuziSlider(id, parent)
+        end)
     end
-    local slider = safeCall(function()
-        return api._Library.UI.CreateSlider(id, parent)
-    end)
+    if slider == nil and api._Library ~= nil and api._Library.UI ~= nil and api._Library.UI.CreateSlider ~= nil then
+        slider = safeCall(function()
+            return api._Library.UI.CreateSlider(id, parent)
+        end)
+    end
     if slider == nil then
         return nil
     end
