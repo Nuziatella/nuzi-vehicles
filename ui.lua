@@ -488,14 +488,14 @@ local function attachDrag(window, dragTarget, key)
     local function readWindowOffset()
         local ok = false
         local x, y = nil, nil
-        if window.GetEffectiveOffset ~= nil then
-            ok, x, y = pcall(function()
-                return window:GetEffectiveOffset()
-            end)
-        end
-        if (not ok or x == nil or y == nil) and window.GetOffset ~= nil then
+        if window.GetOffset ~= nil then
             ok, x, y = pcall(function()
                 return window:GetOffset()
+            end)
+        end
+        if (not ok or x == nil or y == nil) and window.GetEffectiveOffset ~= nil then
+            ok, x, y = pcall(function()
+                return window:GetEffectiveOffset()
             end)
         end
         if ok then
@@ -907,14 +907,14 @@ function Ui.GetPositions()
     local function readOffset(window)
         if window ~= nil then
             local x, y = nil, nil
-            if window.GetEffectiveOffset ~= nil then
-                x, y = safeCall(function()
-                    return window:GetEffectiveOffset()
-                end)
-            end
-            if (x == nil or y == nil) and window.GetOffset ~= nil then
+            if window.GetOffset ~= nil then
                 x, y = safeCall(function()
                     return window:GetOffset()
+                end)
+            end
+            if (x == nil or y == nil) and window.GetEffectiveOffset ~= nil then
+                x, y = safeCall(function()
+                    return window:GetEffectiveOffset()
                 end)
             end
             return tonumber(x), tonumber(y)
