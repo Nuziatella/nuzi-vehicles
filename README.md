@@ -60,4 +60,4 @@ That makes it the better tool when you care about heading quality instead of jus
 - The addon uses profiles so the guidance stays matched to the selected vehicle model instead of pretending every boat handles the same.
 - If a window seems out of place after a UI reload, the saved positions should be re-applied automatically.
 
-2.0.0
+2.0.1
